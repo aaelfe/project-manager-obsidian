@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "project-manager",
+	"name": "Project Manager",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Comprehensive project and task management plugin with Supabase integration.",
+	"author": "Allan Elfe",
+	"authorUrl": "https://github.com/aaelfe",
+	"fundingUrl": "",
 	"isDesktopOnly": false
 }

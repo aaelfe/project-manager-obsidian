@@ -1,16 +1,19 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "obsidian-project-manager",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Comprehensive project and task management plugin for Obsidian with Supabase integration",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
-	"keywords": [],
-	"author": "",
+	"keywords": ["obsidian", "plugin", "project-management", "tasks", "supabase"],
+	"author": "Allan Elfe",
 	"license": "MIT",
+	"dependencies": {
+		"@supabase/supabase-js": "^2.39.0"
+	},
 	"devDependencies": {
 		"@types/node": "^16.11.6",
 		"@typescript-eslint/eslint-plugin": "5.29.0",

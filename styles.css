@@ -1,8 +1,166 @@
-/*
+/* Project Manager Plugin Styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.project-manager-ribbon-class {
+    color: var(--text-accent);
+}
 
-If your plugin does not need CSS, delete this file.
+/* Project Manager Modal */
+.projects-section, .tasks-section {
+    margin-bottom: 20px;
+    padding: 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 5px;
+}
 
-*/
+.projects-list, .tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.project-item, .task-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.project-name, .task-title {
+    font-weight: 500;
+    flex-grow: 1;
+}
+
+/* Status badges */
+.status-active, .status-todo, .status-in-progress {
+    background: var(--color-green);
+    color: white;
+}
+
+.status-completed, .status-done {
+    background: var(--color-blue);
+    color: white;
+}
+
+.status-archived, .status-cancelled {
+    background: var(--color-base-40);
+    color: var(--color-base-100);
+}
+
+.status-blocked {
+    background: var(--color-red);
+    color: white;
+}
+
+/* Priority badges */
+.priority-low {
+    background: var(--color-base-30);
+    color: var(--color-base-100);
+}
+
+.priority-medium {
+    background: var(--color-yellow);
+    color: var(--color-base-00);
+}
+
+.priority-high {
+    background: var(--color-orange);
+    color: white;
+}
+
+.priority-urgent {
+    background: var(--color-red);
+    color: white;
+}
+
+.status-active, .status-completed, .status-archived, .status-blocked,
+.status-todo, .status-in-progress, .status-done, .status-cancelled,
+.priority-low, .priority-medium, .priority-high, .priority-urgent {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-left: 8px;
+}
+
+/* Form styles */
+.project-form, .task-form, .link-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 0;
+}
+
+.project-form input, .task-form input, .link-form input,
+.project-form textarea, .task-form textarea,
+.project-form select, .task-form select, .link-form select {
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: inherit;
+}
+
+.project-form textarea, .task-form textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.button-group {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
+.button-group button {
+    padding: 8px 16px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.button-group button:first-child {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.button-group button:hover {
+    background: var(--background-modifier-hover);
+}
+
+.button-group button:first-child:hover {
+    background: var(--interactive-accent-hover);
+}
+
+/* Settings page styles */
+.connection-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.connection-controls button {
+    padding: 8px 16px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.connection-controls button:hover {
+    background: var(--background-modifier-hover);
+}
