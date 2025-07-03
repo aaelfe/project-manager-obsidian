@@ -183,6 +183,46 @@
     color: var(--text-normal);
 }
 
+/* Project Selector Styles */
+.project-selector {
+    background: var(--background-secondary);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    margin-bottom: 16px;
+}
+
+.selector-label {
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+.project-select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: inherit;
+    margin-bottom: 8px;
+}
+
+.project-info {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding-top: 4px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.project-description {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 .project-filter {
     background: var(--background-secondary);
     padding: 12px;
@@ -410,4 +450,40 @@
 
 .task-card:active {
     cursor: grabbing;
+}
+
+/* Project Selector Modal Styles */
+.project-selector-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.project-selector-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 8px;
+}
+
+.project-selector-item:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+}
+
+.project-selector-item .project-name {
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+.project-selector-item .project-description {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin: 4px 0 0 0;
 }

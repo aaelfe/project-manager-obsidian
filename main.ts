@@ -65,6 +65,7 @@ interface Task {
 export class KanbanView extends ItemView {
 	plugin: ProjectManagerPlugin;
 	root: Root | null = null;
+	selectedProjectId: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ProjectManagerPlugin) {
 		super(leaf);
@@ -76,7 +77,16 @@ export class KanbanView extends ItemView {
 	}
 
 	getDisplayText() {
+		if (this.selectedProjectId) {
+			const project = this.plugin.projects.find(p => p.id === this.selectedProjectId);
+			return project ? `Kanban: ${project.name}` : "Project Kanban";
+		}
 		return "Project Kanban";
+	}
+
+	setSelectedProject(projectId: string | null) {
+		this.selectedProjectId = projectId;
+		this.updateBoard();
 	}
 
 	async onOpen() {
@@ -96,7 +106,9 @@ export class KanbanView extends ItemView {
 			this.root.render(React.createElement(KanbanBoard, { 
 				plugin: this.plugin,
 				projects: this.plugin.projects,
-				tasks: this.plugin.tasks
+				tasks: this.plugin.tasks,
+				selectedProjectId: this.selectedProjectId,
+				onProjectChange: (projectId: string | null) => this.setSelectedProject(projectId)
 			}));
 		}
 	}
@@ -161,6 +173,14 @@ export default class ProjectManagerPlugin extends Plugin {
 			name: 'Open Project Manager',
 			callback: () => {
 				this.activateKanbanView();
+			}
+		});
+
+		this.addCommand({
+			id: 'open-project-kanban',
+			name: 'Open Project Kanban',
+			callback: () => {
+				this.openProjectKanbanSelector();
 			}
 		});
 		// Editor command to link current note to project/task
@@ -311,6 +331,10 @@ export default class ProjectManagerPlugin extends Plugin {
 		}
 	}
 
+	openProjectKanbanSelector() {
+		new ProjectKanbanSelectorModal(this.app, this).open();
+	}
+
 	updateStatusBar() {
 		if (!this.statusBarItem) return;
 		const activeTasks = this.tasks.filter(task => task.status === 'in-progress').length;
@@ -358,6 +382,60 @@ class ProjectManagerModal extends Modal {
 			taskEl.createEl('span', {text: task.status, cls: `status-${task.status}`});
 			taskEl.createEl('span', {text: task.priority, cls: `priority-${task.priority}`});
 		});
+	}
+
+	onClose() {
+		const {contentEl} = this;
+		contentEl.empty();
+	}
+}
+
+class ProjectKanbanSelectorModal extends Modal {
+	constructor(app: App, private plugin: ProjectManagerPlugin) {
+		super(app);
+	}
+
+	onOpen() {
+		const {contentEl} = this;
+		contentEl.empty();
+		contentEl.createEl('h2', {text: 'Select Project for Kanban Board'});
+
+		const form = contentEl.createDiv('project-selector-form');
+		
+		const projectsList = form.createDiv('projects-list');
+		
+		// Add "All Projects" option
+		const allProjectsEl = projectsList.createDiv('project-selector-item');
+		allProjectsEl.createEl('span', {text: 'All Projects', cls: 'project-name'});
+		allProjectsEl.onclick = async () => {
+			await this.plugin.activateKanbanView();
+			if (this.plugin.kanbanView) {
+				this.plugin.kanbanView.setSelectedProject(null);
+			}
+			this.close();
+		};
+
+		// Add individual projects
+		this.plugin.projects.forEach(project => {
+			const projectEl = projectsList.createDiv('project-selector-item');
+			projectEl.createEl('span', {text: project.name, cls: 'project-name'});
+			projectEl.createEl('span', {text: project.status, cls: `status-${project.status}`});
+			if (project.description) {
+				projectEl.createEl('p', {text: project.description, cls: 'project-description'});
+			}
+			
+			projectEl.onclick = async () => {
+				await this.plugin.activateKanbanView();
+				if (this.plugin.kanbanView) {
+					this.plugin.kanbanView.setSelectedProject(project.id);
+				}
+				this.close();
+			};
+		});
+
+		const buttonDiv = form.createDiv('button-group');
+		const cancelBtn = buttonDiv.createEl('button', {text: 'Cancel'});
+		cancelBtn.onclick = () => this.close();
 	}
 
 	onClose() {
@@ -426,7 +504,7 @@ class CreateProjectModal extends Modal {
 }
 
 class CreateTaskModal extends Modal {
-	constructor(app: App, private plugin: ProjectManagerPlugin) {
+	constructor(app: App, private plugin: ProjectManagerPlugin, private selectedProjectId?: string | null) {
 		super(app);
 	}
 
@@ -449,7 +527,11 @@ class CreateTaskModal extends Modal {
 		const projectSelect = form.createEl('select');
 		projectSelect.createEl('option', {value: '', text: 'No project'});
 		this.plugin.projects.forEach(project => {
-			projectSelect.createEl('option', {value: project.id, text: project.name});
+			const option = projectSelect.createEl('option', {value: project.id, text: project.name});
+			// Pre-select the current project if one is selected
+			if (this.selectedProjectId && project.id === this.selectedProjectId) {
+				option.selected = true;
+			}
 		});
 		
 		const buttonDiv = form.createDiv('button-group');
@@ -668,10 +750,11 @@ interface KanbanBoardProps {
 	plugin: ProjectManagerPlugin;
 	projects: Project[];
 	tasks: Task[];
+	selectedProjectId: string | null;
+	onProjectChange: (projectId: string | null) => void;
 }
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks }) => {
-	const [filteredProjects, setFilteredProjects] = React.useState<string[]>([]);
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, selectedProjectId, onProjectChange }) => {
 	const [filteredTasks, setFilteredTasks] = React.useState<Task[]>(tasks);
 	const [activeId, setActiveId] = React.useState<string | null>(null);
 
@@ -684,14 +767,14 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks }) =>
 	);
 
 	React.useEffect(() => {
-		if (filteredProjects.length === 0) {
+		if (selectedProjectId === null) {
+			// Show all tasks when no specific project is selected
 			setFilteredTasks(tasks);
 		} else {
-			setFilteredTasks(tasks.filter(task => 
-				task.project_id && filteredProjects.includes(task.project_id)
-			));
+			// Show only tasks for the selected project
+			setFilteredTasks(tasks.filter(task => task.project_id === selectedProjectId));
 		}
-	}, [tasks, filteredProjects]);
+	}, [tasks, selectedProjectId]);
 
 	const tasksByStatus = {
 		'todo': filteredTasks.filter(task => task.status === 'todo'),
@@ -750,10 +833,10 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks }) =>
 		React.createElement('div', { className: 'kanban-board' },
 			React.createElement('div', { className: 'kanban-header' },
 				React.createElement('h2', null, 'Project Kanban'),
-				React.createElement(ProjectFilter, {
+				React.createElement(ProjectSelector, {
 					projects,
-					selectedProjects: filteredProjects,
-					onProjectsChange: setFilteredProjects
+					selectedProjectId,
+					onProjectChange
 				})
 			),
 			React.createElement('div', { className: 'kanban-columns' },
@@ -761,31 +844,36 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks }) =>
 					title: 'To Do',
 					status: 'todo',
 					tasks: tasksByStatus['todo'],
-					plugin
+					plugin,
+					selectedProjectId
 				}),
 				React.createElement(KanbanColumn, {
 					title: 'In Progress',
 					status: 'in-progress',
 					tasks: tasksByStatus['in-progress'],
-					plugin
+					plugin,
+					selectedProjectId
 				}),
 				React.createElement(KanbanColumn, {
 					title: 'Done',
 					status: 'done',
 					tasks: tasksByStatus['done'],
-					plugin
+					plugin,
+					selectedProjectId
 				}),
 				React.createElement(KanbanColumn, {
 					title: 'Blocked',
 					status: 'blocked',
 					tasks: tasksByStatus['blocked'],
-					plugin
+					plugin,
+					selectedProjectId
 				}),
 				React.createElement(KanbanColumn, {
 					title: 'Cancelled',
 					status: 'cancelled',
 					tasks: tasksByStatus['cancelled'],
-					plugin
+					plugin,
+					selectedProjectId
 				})
 			)
 		),
@@ -795,6 +883,46 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks }) =>
 				plugin,
 				isDragging: true
 			})
+		)
+	);
+};
+
+interface ProjectSelectorProps {
+	projects: Project[];
+	selectedProjectId: string | null;
+	onProjectChange: (projectId: string | null) => void;
+}
+
+const ProjectSelector: React.FC<ProjectSelectorProps> = ({ projects, selectedProjectId, onProjectChange }) => {
+	const selectedProject = projects.find(p => p.id === selectedProjectId);
+
+	return React.createElement('div', { className: 'project-selector' },
+		React.createElement('div', { className: 'selector-label' },
+			React.createElement('span', null, 'Project: ')
+		),
+		React.createElement('select', {
+			value: selectedProjectId || '',
+			onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+				const value = e.target.value;
+				onProjectChange(value === '' ? null : value);
+			},
+			className: 'project-select'
+		},
+			React.createElement('option', { value: '' }, 'All Projects'),
+			projects.map(project =>
+				React.createElement('option', {
+					key: project.id,
+					value: project.id
+				}, project.name)
+			)
+		),
+		selectedProject && React.createElement('div', { className: 'project-info' },
+			React.createElement('span', { className: `project-status status-${selectedProject.status}` }, 
+				selectedProject.status
+			),
+			selectedProject.description && React.createElement('span', { className: 'project-description' }, 
+				selectedProject.description
+			)
 		)
 	);
 };
@@ -846,9 +974,10 @@ interface KanbanColumnProps {
 	status: string;
 	tasks: Task[];
 	plugin: ProjectManagerPlugin;
+	selectedProjectId?: string | null;
 }
 
-const KanbanColumn: React.FC<KanbanColumnProps> = ({ title, status, tasks, plugin }) => {
+const KanbanColumn: React.FC<KanbanColumnProps> = ({ title, status, tasks, plugin, selectedProjectId }) => {
 	const { setNodeRef, isOver } = useDroppable({
 		id: status,
 	});
@@ -877,7 +1006,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ title, status, tasks, plugi
 			}),
 			React.createElement('button', {
 				className: 'add-task-btn',
-				onClick: () => new CreateTaskModal(plugin.app, plugin).open()
+				onClick: () => new CreateTaskModal(plugin.app, plugin, selectedProjectId).open()
 			}, '+ Add Task')
 		)
 	);
