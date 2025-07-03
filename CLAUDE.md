@@ -18,22 +18,26 @@ This is an Obsidian plugin for comprehensive project and task management with Su
 ### Core Components
 
 - **ProjectManagerPlugin** (`main.ts:43`) - Main plugin class that extends Obsidian's Plugin
+- **KanbanView** (`main.ts:65`) - React-based Kanban board with drag-and-drop functionality
 - **Supabase Integration** - Uses `@supabase/supabase-js` for backend data management
+- **React Components** - Modern UI with @dnd-kit for drag-and-drop task management
 - **Modal Classes** - UI components for project/task creation and management
 - **Settings Management** - Plugin configuration via Obsidian's settings system
 
 ### Data Models
 
-- **Project** (`main.ts:18-27`) - Project entity with status (active/completed/archived)
-- **Task** (`main.ts:29-41`) - Task entity with status (todo/in-progress/done/blocked/cancelled) and priority levels
-- **ProjectManagerSettings** (`main.ts:4-9`) - Plugin configuration including Supabase credentials
+- **Project** (`main.ts:40-49`) - Project entity with status (active/completed/archived)
+- **Task** (`main.ts:51-63`) - Task entity with status (todo/in-progress/done/blocked/cancelled) and priority levels
+- **ProjectManagerSettings** (`main.ts:24-29`) - Plugin configuration including Supabase credentials
 
 ### Key Features
 
 - Real-time synchronization with Supabase using PostgreSQL change listeners
+- Interactive Kanban board with drag-and-drop task management
 - Ribbon icon and status bar integration
 - Command palette integration for quick actions
 - Note linking to projects and tasks via markdown file paths
+- GitHub repository integration for projects and tasks
 - Settings tab for Supabase configuration
 
 ### File Structure
@@ -49,6 +53,14 @@ This is an Obsidian plugin for comprehensive project and task management with Su
 The plugin expects Supabase tables:
 - `projects` table with columns: id, name, description, status, created_at, updated_at, markdown_file, github_repo
 - `tasks` table with columns: id, title, description, status, priority, project_id, created_at, updated_at, due_date, markdown_file, github_repo
+
+## Dependencies
+
+The plugin uses modern web technologies:
+- **React 18** - Component-based UI framework
+- **@dnd-kit** - Accessible drag-and-drop library for the Kanban board
+- **@supabase/supabase-js** - Real-time database integration
+- **TypeScript** - Type-safe development
 
 ## Building and Testing
 
