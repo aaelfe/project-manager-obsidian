@@ -393,26 +393,8 @@ export default class ProjectManagerPlugin extends Plugin {
 			// Create directories if they don't exist
 			await this.ensureDirectoryExists(projectDir);
 			
-			// Create note content with task metadata
+			// Create note content with just the title
 			const noteContent = `# ${task.title}
-
-## Task Details
-- **Status**: ${task.status}
-- **Priority**: ${task.priority}
-- **Project**: ${project ? project.name : 'Unassigned'}
-- **Created**: ${new Date(task.created_at).toLocaleDateString()}
-${task.due_date ? `- **Due Date**: ${new Date(task.due_date).toLocaleDateString()}` : ''}
-${task.github_repo ? `- **GitHub**: https://github.com/${task.github_repo}` : ''}
-
-## Description
-${task.description || 'No description provided.'}
-
-## Notes
-<!-- Add your notes here -->
-
----
-*This note was auto-generated from task: ${task.id}*
-*Project: ${project ? project.name : 'Unassigned'}*
 `;
 
 			// Create the file
