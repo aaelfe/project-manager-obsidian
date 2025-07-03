@@ -103,11 +103,12 @@ export class KanbanView extends ItemView {
 
 	updateBoard() {
 		if (this.root) {
-			// Force React re-render by creating new object references
+			// Force React re-render by creating new object references with timestamp
 			const projects = [...this.plugin.projects];
 			const tasks = [...this.plugin.tasks];
 			
 			this.root.render(React.createElement(KanbanBoard, { 
+				key: `kanban-${Date.now()}`, // Force re-render with unique key
 				plugin: this.plugin,
 				projects: projects,
 				tasks: tasks,
@@ -252,17 +253,30 @@ export default class ProjectManagerPlugin extends Plugin {
 	setupRealtimeSubscriptions() {
 		if (!this.supabase) return;
 		
+		// Cleanup existing subscription
+		if (this.realtimeChannel) {
+			this.realtimeChannel.unsubscribe();
+		}
+		
 		this.realtimeChannel = this.supabase
 			.channel('project-manager-changes')
 			.on('postgres_changes', 
 				{ event: '*', schema: 'public', table: 'projects' },
-				() => this.loadProjects()
+				(payload) => {
+					console.log('Projects changed:', payload);
+					this.loadProjects();
+				}
 			)
 			.on('postgres_changes',
 				{ event: '*', schema: 'public', table: 'tasks' },
-				() => this.loadTasks()
+				(payload) => {
+					console.log('Tasks changed:', payload);
+					this.loadTasks();
+				}
 			)
-			.subscribe();
+			.subscribe((status) => {
+				console.log('Realtime subscription status:', status);
+			});
 	}
 
 	async loadProjectsAndTasks() {
@@ -343,6 +357,88 @@ export default class ProjectManagerPlugin extends Plugin {
 		if (!this.statusBarItem) return;
 		const activeTasks = this.tasks.filter(task => task.status === 'in-progress').length;
 		this.statusBarItem.setText(`Active tasks: ${activeTasks}`);
+	}
+
+	async ensureDirectoryExists(dirPath: string): Promise<void> {
+		try {
+			// Check if directory already exists
+			const existingFolder = this.app.vault.getAbstractFileByPath(dirPath);
+			if (existingFolder) {
+				return; // Directory already exists
+			}
+			
+			// Create directory recursively
+			await this.app.vault.createFolder(dirPath);
+		} catch (error) {
+			// If folder already exists, createFolder throws an error, which we can ignore
+			if (!error.message?.includes('already exists')) {
+				throw error;
+			}
+		}
+	}
+
+	async createNoteFromTask(task: Task): Promise<void> {
+		try {
+			// Generate safe filename from task title
+			const fileName = task.title.replace(/[<>:"/\\|?*]/g, '').trim();
+			
+			// Get project name if task is associated with a project
+			const project = this.projects.find(p => p.id === task.project_id);
+			const projectName = project ? project.name.replace(/[<>:"/\\|?*]/g, '').trim() : 'Unassigned';
+			
+			// Create directory structure: Projects/Management/<project-name>/
+			const projectDir = `${this.settings.defaultProjectPath}/Management/${projectName}`;
+			const filePath = `${projectDir}/${fileName}.md`;
+			
+			// Create directories if they don't exist
+			await this.ensureDirectoryExists(projectDir);
+			
+			// Create note content with task metadata
+			const noteContent = `# ${task.title}
+
+## Task Details
+- **Status**: ${task.status}
+- **Priority**: ${task.priority}
+- **Project**: ${project ? project.name : 'Unassigned'}
+- **Created**: ${new Date(task.created_at).toLocaleDateString()}
+${task.due_date ? `- **Due Date**: ${new Date(task.due_date).toLocaleDateString()}` : ''}
+${task.github_repo ? `- **GitHub**: https://github.com/${task.github_repo}` : ''}
+
+## Description
+${task.description || 'No description provided.'}
+
+## Notes
+<!-- Add your notes here -->
+
+---
+*This note was auto-generated from task: ${task.id}*
+*Project: ${project ? project.name : 'Unassigned'}*
+`;
+
+			// Create the file
+			const file = await this.app.vault.create(filePath, noteContent);
+			
+			// Link the note to the task in Supabase
+			if (this.supabase) {
+				const { error } = await this.supabase
+					.from('tasks')
+					.update({ markdown_file: filePath })
+					.eq('id', task.id);
+				
+				if (error) throw error;
+				
+				// Refresh tasks to update UI
+				await this.loadTasks();
+			}
+			
+			// Open the created note
+			await this.app.workspace.openLinkText(filePath, '');
+			
+			new Notice(`Created note: ${projectName}/${fileName}.md`);
+		} catch (error) {
+			console.error('Failed to create note from task:', error);
+			new Notice('Failed to create note. Check console for details.');
+		}
 	}
 
 	async loadSettings() {
@@ -491,10 +587,8 @@ class CreateProjectModal extends Modal {
 			if (error) throw error;
 			new Notice(`Project "${name}" created successfully`);
 			
-			// Real-time will update automatically, but refresh manually as backup
-			if (!this.plugin.settings.enableRealtime) {
-				this.plugin.loadProjects();
-			}
+			// Force immediate refresh to ensure UI updates
+			await this.plugin.loadProjects();
 		} catch (error) {
 			console.error('Failed to create project:', error);
 			new Notice('Failed to create project');
@@ -508,7 +602,7 @@ class CreateProjectModal extends Modal {
 }
 
 class CreateTaskModal extends Modal {
-	constructor(app: App, private plugin: ProjectManagerPlugin, private selectedProjectId?: string | null) {
+	constructor(app: App, private plugin: ProjectManagerPlugin, private selectedProjectId?: string | null, private defaultStatus?: 'todo' | 'in-progress' | 'done' | 'blocked' | 'cancelled') {
 		super(app);
 	}
 
@@ -519,15 +613,32 @@ class CreateTaskModal extends Modal {
 
 		const form = contentEl.createDiv('task-form');
 		
-		const titleInput = form.createEl('input', {type: 'text', placeholder: 'Task title'});
-		const descInput = form.createEl('textarea', {placeholder: 'Task description (optional)'});
+		form.createEl('label', {text: 'Task Title *', cls: 'form-label'});
+		const titleInput = form.createEl('input', {type: 'text', placeholder: 'Enter task title'});
 		
+		form.createEl('label', {text: 'Description', cls: 'form-label'});
+		const descInput = form.createEl('textarea', {placeholder: 'Add task description (optional)'});
+		
+		form.createEl('label', {text: 'Status', cls: 'form-label'});
+		const statusSelect = form.createEl('select');
+		['todo', 'in-progress', 'done', 'blocked', 'cancelled'].forEach(status => {
+			const option = statusSelect.createEl('option', {value: status, text: status.replace('-', ' ')});
+			// Pre-select the status based on the column where the task is being created
+			if (this.defaultStatus && status === this.defaultStatus) {
+				option.selected = true;
+			} else if (!this.defaultStatus && status === 'todo') {
+				option.selected = true;
+			}
+		});
+		
+		form.createEl('label', {text: 'Priority', cls: 'form-label'});
 		const prioritySelect = form.createEl('select');
 		['low', 'medium', 'high', 'urgent'].forEach(priority => {
-			const option = prioritySelect.createEl('option', {value: priority, text: priority});
+			const option = prioritySelect.createEl('option', {value: priority, text: priority.charAt(0).toUpperCase() + priority.slice(1)});
 			if (priority === 'medium') option.selected = true;
 		});
 		
+		form.createEl('label', {text: 'Project', cls: 'form-label'});
 		const projectSelect = form.createEl('select');
 		projectSelect.createEl('option', {value: '', text: 'No project'});
 		this.plugin.projects.forEach(project => {
@@ -547,6 +658,7 @@ class CreateTaskModal extends Modal {
 				await this.createTask(
 					titleInput.value.trim(),
 					descInput.value.trim(),
+					statusSelect.value as 'todo' | 'in-progress' | 'done' | 'blocked' | 'cancelled',
 					prioritySelect.value as 'low' | 'medium' | 'high' | 'urgent',
 					projectSelect.value || undefined
 				);
@@ -557,14 +669,14 @@ class CreateTaskModal extends Modal {
 		cancelBtn.onclick = () => this.close();
 	}
 
-	async createTask(title: string, description: string, priority: 'low' | 'medium' | 'high' | 'urgent', projectId?: string) {
+	async createTask(title: string, description: string, status: 'todo' | 'in-progress' | 'done' | 'blocked' | 'cancelled', priority: 'low' | 'medium' | 'high' | 'urgent', projectId?: string) {
 		if (!this.plugin.supabase) {
 			new Notice('Not connected to Supabase');
 			return;
 		}
 		
 		try {
-			const taskData: { title: string; description: string; priority: string; project_id?: string } = { title, description, priority };
+			const taskData: { title: string; description: string; status: string; priority: string; project_id?: string } = { title, description, status, priority };
 			if (projectId) taskData.project_id = projectId;
 			
 			const { error } = await this.plugin.supabase
@@ -574,10 +686,8 @@ class CreateTaskModal extends Modal {
 			if (error) throw error;
 			new Notice(`Task "${title}" created successfully`);
 			
-			// Real-time will update automatically, but refresh manually as backup
-			if (!this.plugin.settings.enableRealtime) {
-				this.plugin.loadTasks();
-			}
+			// Force immediate refresh to ensure UI updates
+			await this.plugin.loadTasks();
 		} catch (error) {
 			console.error('Failed to create task:', error);
 			new Notice('Failed to create task');
@@ -652,6 +762,7 @@ class TaskDetailModal extends Modal {
 		
 		const buttonDiv = form.createDiv('button-group');
 		const saveBtn = buttonDiv.createEl('button', {text: 'Save Changes'});
+		const createNoteBtn = buttonDiv.createEl('button', {text: this.task.markdown_file ? 'Open Note' : 'Create Note'});
 		const deleteBtn = buttonDiv.createEl('button', {text: 'Delete Task', cls: 'mod-warning'});
 		const cancelBtn = buttonDiv.createEl('button', {text: 'Cancel'});
 
@@ -667,6 +778,16 @@ class TaskDetailModal extends Modal {
 				github_repo: githubRepoInput.value.trim() || undefined
 			});
 			this.close();
+		};
+
+		createNoteBtn.onclick = async () => {
+			if (this.task.markdown_file) {
+				// Open existing note
+				this.plugin.app.workspace.openLinkText(this.task.markdown_file, '');
+			} else {
+				// Create new note from task
+				await this.plugin.createNoteFromTask(this.task);
+			}
 		};
 
 		deleteBtn.onclick = async () => {
@@ -694,9 +815,8 @@ class TaskDetailModal extends Modal {
 			if (error) throw error;
 			new Notice('Task updated successfully');
 			
-			if (!this.plugin.settings.enableRealtime) {
-				this.plugin.loadTasks();
-			}
+			// Force immediate refresh to ensure UI updates
+			await this.plugin.loadTasks();
 		} catch (error) {
 			console.error('Failed to update task:', error);
 			new Notice('Failed to update task');
@@ -718,9 +838,8 @@ class TaskDetailModal extends Modal {
 			if (error) throw error;
 			new Notice('Task deleted successfully');
 			
-			if (!this.plugin.settings.enableRealtime) {
-				this.plugin.loadTasks();
-			}
+			// Force immediate refresh to ensure UI updates
+			await this.plugin.loadTasks();
 		} catch (error) {
 			console.error('Failed to delete task:', error);
 			new Notice('Failed to delete task');
@@ -902,10 +1021,11 @@ interface KanbanBoardProps {
 }
 
 const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, selectedProjectId, onProjectChange }) => {
-	const [filteredTasks, setFilteredTasks] = React.useState<Task[]>(tasks);
 	const [activeId, setActiveId] = React.useState<string | null>(null);
-	const [currentTasks, setCurrentTasks] = React.useState<Task[]>(tasks);
-	const [currentProjects, setCurrentProjects] = React.useState<Project[]>(projects);
+	
+	// Use props directly instead of local state to ensure real-time updates
+	const currentTasks = React.useMemo(() => tasks, [tasks]);
+	const currentProjects = React.useMemo(() => projects, [projects]);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -915,22 +1035,14 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, sele
 		})
 	);
 
-	// Update local state when plugin data changes
-	React.useEffect(() => {
-		setCurrentTasks(tasks);
-	}, [tasks]);
-
-	React.useEffect(() => {
-		setCurrentProjects(projects);
-	}, [projects]);
-
-	React.useEffect(() => {
+	// Filter tasks based on selected project
+	const filteredTasks = React.useMemo(() => {
 		if (selectedProjectId === null) {
 			// Show all tasks when no specific project is selected
-			setFilteredTasks(currentTasks);
+			return currentTasks;
 		} else {
 			// Show only tasks for the selected project
-			setFilteredTasks(currentTasks.filter(task => task.project_id === selectedProjectId));
+			return currentTasks.filter(task => task.project_id === selectedProjectId);
 		}
 	}, [currentTasks, selectedProjectId]);
 
@@ -970,14 +1082,17 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, sele
 				if (error) throw error;
 				new Notice(`Task moved to ${newStatus}`);
 
-				// Refresh data if real-time is disabled
-				if (!plugin.settings.enableRealtime) {
-					plugin.loadTasks();
-				}
+				// Force immediate refresh to ensure UI updates
+				await plugin.loadTasks();
 			} catch (error) {
 				console.error('Failed to update task status:', error);
-				new Notice('Failed to move task');
+				new Notice('Failed to move task. Please try again.');
+				
+				// Force refresh to restore correct state
+				await plugin.loadTasks();
 			}
+		} else {
+			new Notice('Not connected to database');
 		}
 	};
 
@@ -990,7 +1105,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, sele
 	},
 		React.createElement('div', { className: 'kanban-board' },
 			React.createElement('div', { className: 'kanban-header' },
-				React.createElement('h2', null, 'Project Kanban'),
+				React.createElement('div', { className: 'kanban-header-top' },
+					React.createElement('button', {
+						className: 'create-project-btn',
+						onClick: () => new CreateProjectModal(plugin.app, plugin).open(),
+						title: 'Create New Project'
+					}, '+ New Project')
+				),
 				React.createElement(ProjectSelector, {
 					projects: currentProjects,
 					selectedProjectId,
@@ -1164,7 +1285,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ title, status, tasks, plugi
 			}),
 			React.createElement('button', {
 				className: 'add-task-btn',
-				onClick: () => new CreateTaskModal(plugin.app, plugin, selectedProjectId).open()
+				onClick: () => new CreateTaskModal(plugin.app, plugin, selectedProjectId, status as 'todo' | 'in-progress' | 'done' | 'blocked' | 'cancelled').open()
 			}, '+ Add Task')
 		)
 	);
@@ -1219,6 +1340,13 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, plugin, isDragging }) => {
 		}
 	};
 
+	const handleCreateNote = async (e: React.MouseEvent) => {
+		e.stopPropagation();
+		if (!isDragging) {
+			await plugin.createNoteFromTask(task);
+		}
+	};
+
 	const handleDeleteTask = async (e: React.MouseEvent) => {
 		e.stopPropagation();
 		if (!isDragging && confirm(`Delete task "${task.title}"?`)) {
@@ -1232,13 +1360,14 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, plugin, isDragging }) => {
 					if (error) throw error;
 					new Notice('Task deleted successfully');
 					
-					if (!plugin.settings.enableRealtime) {
-						plugin.loadTasks();
-					}
+					// Force immediate refresh to ensure UI updates
+					await plugin.loadTasks();
+				} else {
+					new Notice('Not connected to database');
 				}
 			} catch (error) {
 				console.error('Failed to delete task:', error);
-				new Notice('Failed to delete task');
+				new Notice('Failed to delete task. Please try again.');
 			}
 		}
 	};
@@ -1294,6 +1423,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, plugin, isDragging }) => {
 					onClick: (e: React.MouseEvent) => handleLinkClick(e, task.markdown_file!),
 					title: 'Open linked note'
 				}, '📝'),
+				!task.markdown_file && React.createElement('button', {
+					className: 'link-btn create-note-btn',
+					onClick: handleCreateNote,
+					title: 'Create note from task'
+				}, '📄'),
 				task.github_repo && React.createElement('a', {
 					className: 'link-btn github-link',
 					href: `https://github.com/${task.github_repo}`,
