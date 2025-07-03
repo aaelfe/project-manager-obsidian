@@ -1,5 +1,25 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, ItemView, WorkspaceLeaf } from 'obsidian';
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
+import React from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import {
+	DndContext,
+	DragEndEvent,
+	DragOverlay,
+	DragStartEvent,
+	PointerSensor,
+	useSensor,
+	useSensors,
+	useDroppable,
+} from '@dnd-kit/core';
+import {
+	SortableContext,
+	verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
+	useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface ProjectManagerSettings {
 	supabaseUrl: string;
@@ -14,6 +34,8 @@ const DEFAULT_SETTINGS: ProjectManagerSettings = {
 	defaultProjectPath: 'Projects',
 	enableRealtime: true
 };
+
+export const VIEW_TYPE_KANBAN = "project-manager-kanban";
 
 interface Project {
 	id: string;
@@ -40,6 +62,52 @@ interface Task {
 	github_repo?: string;
 }
 
+export class KanbanView extends ItemView {
+	plugin: ProjectManagerPlugin;
+	root: Root | null = null;
+
+	constructor(leaf: WorkspaceLeaf, plugin: ProjectManagerPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+	}
+
+	getViewType() {
+		return VIEW_TYPE_KANBAN;
+	}
+
+	getDisplayText() {
+		return "Project Kanban";
+	}
+
+	async onOpen() {
+		const container = this.containerEl.children[1];
+		container.empty();
+		container.createEl("div", { attr: { id: "kanban-root" } });
+		
+		const rootElement = container.querySelector("#kanban-root");
+		if (rootElement) {
+			this.root = createRoot(rootElement);
+			this.updateBoard();
+		}
+	}
+
+	updateBoard() {
+		if (this.root) {
+			this.root.render(React.createElement(KanbanBoard, { 
+				plugin: this.plugin,
+				projects: this.plugin.projects,
+				tasks: this.plugin.tasks
+			}));
+		}
+	}
+
+	async onClose() {
+		if (this.root) {
+			this.root.unmount();
+		}
+	}
+}
+
 export default class ProjectManagerPlugin extends Plugin {
 	settings: ProjectManagerSettings;
 	supabase: SupabaseClient | null = null;
@@ -47,13 +115,23 @@ export default class ProjectManagerPlugin extends Plugin {
 	tasks: Task[] = [];
 	realtimeChannel: RealtimeChannel | null = null;
 	statusBarItem: HTMLElement | null = null;
+	kanbanView: KanbanView | null = null;
 
 	async onload() {
 		await this.loadSettings();
 
+		// Register the kanban view
+		this.registerView(
+			VIEW_TYPE_KANBAN,
+			(leaf) => {
+				this.kanbanView = new KanbanView(leaf, this);
+				return this.kanbanView;
+			}
+		);
+
 		// Add ribbon icon for project manager
 		const ribbonIconEl = this.addRibbonIcon('folder-tree', 'Project Manager', (evt: MouseEvent) => {
-			this.openProjectManagerView();
+			this.activateKanbanView();
 		});
 		ribbonIconEl.addClass('project-manager-ribbon-class');
 
@@ -82,7 +160,7 @@ export default class ProjectManagerPlugin extends Plugin {
 			id: 'open-project-manager',
 			name: 'Open Project Manager',
 			callback: () => {
-				this.openProjectManagerView();
+				this.activateKanbanView();
 			}
 		});
 		// Editor command to link current note to project/task
@@ -179,6 +257,11 @@ export default class ProjectManagerPlugin extends Plugin {
 			
 			if (error) throw error;
 			this.projects = data || [];
+			
+			// Update kanban view if it's open
+			if (this.kanbanView) {
+				this.kanbanView.updateBoard();
+			}
 		} catch (error) {
 			console.error('Failed to load projects:', error);
 			new Notice('Failed to load projects');
@@ -196,14 +279,36 @@ export default class ProjectManagerPlugin extends Plugin {
 			
 			if (error) throw error;
 			this.tasks = data || [];
+			
+			// Update kanban view if it's open
+			if (this.kanbanView) {
+				this.kanbanView.updateBoard();
+			}
 		} catch (error) {
 			console.error('Failed to load tasks:', error);
 			new Notice('Failed to load tasks');
 		}
 	}
 
-	openProjectManagerView() {
-		new ProjectManagerModal(this.app, this).open();
+	async activateKanbanView() {
+		const { workspace } = this.app;
+
+		let leaf: WorkspaceLeaf | null = null;
+		const leaves = workspace.getLeavesOfType(VIEW_TYPE_KANBAN);
+
+		if (leaves.length > 0) {
+			// A kanban view is already open, focus the first one
+			leaf = leaves[0];
+		} else {
+			// No kanban view is open, create one in the right sidebar
+			leaf = workspace.getRightLeaf(false);
+			await leaf?.setViewState({ type: VIEW_TYPE_KANBAN, active: true });
+		}
+
+		// "Reveal" the leaf in case it is in a collapsed sidebar
+		if (leaf) {
+			workspace.revealLeaf(leaf);
+		}
 	}
 
 	updateStatusBar() {
@@ -557,3 +662,311 @@ class ProjectManagerSettingTab extends PluginSettingTab {
 		};
 	}
 }
+
+// React Components
+interface KanbanBoardProps {
+	plugin: ProjectManagerPlugin;
+	projects: Project[];
+	tasks: Task[];
+}
+
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks }) => {
+	const [filteredProjects, setFilteredProjects] = React.useState<string[]>([]);
+	const [filteredTasks, setFilteredTasks] = React.useState<Task[]>(tasks);
+	const [activeId, setActiveId] = React.useState<string | null>(null);
+
+	const sensors = useSensors(
+		useSensor(PointerSensor, {
+			activationConstraint: {
+				distance: 3,
+			},
+		})
+	);
+
+	React.useEffect(() => {
+		if (filteredProjects.length === 0) {
+			setFilteredTasks(tasks);
+		} else {
+			setFilteredTasks(tasks.filter(task => 
+				task.project_id && filteredProjects.includes(task.project_id)
+			));
+		}
+	}, [tasks, filteredProjects]);
+
+	const tasksByStatus = {
+		'todo': filteredTasks.filter(task => task.status === 'todo'),
+		'in-progress': filteredTasks.filter(task => task.status === 'in-progress'),
+		'done': filteredTasks.filter(task => task.status === 'done'),
+		'blocked': filteredTasks.filter(task => task.status === 'blocked'),
+		'cancelled': filteredTasks.filter(task => task.status === 'cancelled'),
+	};
+
+	const handleDragStart = (event: DragStartEvent) => {
+		setActiveId(event.active.id as string);
+	};
+
+	const handleDragEnd = async (event: DragEndEvent) => {
+		const { active, over } = event;
+		setActiveId(null);
+
+		if (!over) return;
+
+		const taskId = active.id as string;
+		const newStatus = over.id as string;
+
+		// Find the task being moved
+		const task = filteredTasks.find(t => t.id === taskId);
+		if (!task || task.status === newStatus) return;
+
+		// Update task status in Supabase
+		if (plugin.supabase) {
+			try {
+				const { error } = await plugin.supabase
+					.from('tasks')
+					.update({ status: newStatus })
+					.eq('id', taskId);
+
+				if (error) throw error;
+				new Notice(`Task moved to ${newStatus}`);
+
+				// Refresh data if real-time is disabled
+				if (!plugin.settings.enableRealtime) {
+					plugin.loadTasks();
+				}
+			} catch (error) {
+				console.error('Failed to update task status:', error);
+				new Notice('Failed to move task');
+			}
+		}
+	};
+
+	const draggedTask = activeId ? filteredTasks.find(task => task.id === activeId) : null;
+
+	return React.createElement(DndContext, {
+		sensors,
+		onDragStart: handleDragStart,
+		onDragEnd: handleDragEnd
+	},
+		React.createElement('div', { className: 'kanban-board' },
+			React.createElement('div', { className: 'kanban-header' },
+				React.createElement('h2', null, 'Project Kanban'),
+				React.createElement(ProjectFilter, {
+					projects,
+					selectedProjects: filteredProjects,
+					onProjectsChange: setFilteredProjects
+				})
+			),
+			React.createElement('div', { className: 'kanban-columns' },
+				React.createElement(KanbanColumn, {
+					title: 'To Do',
+					status: 'todo',
+					tasks: tasksByStatus['todo'],
+					plugin
+				}),
+				React.createElement(KanbanColumn, {
+					title: 'In Progress',
+					status: 'in-progress',
+					tasks: tasksByStatus['in-progress'],
+					plugin
+				}),
+				React.createElement(KanbanColumn, {
+					title: 'Done',
+					status: 'done',
+					tasks: tasksByStatus['done'],
+					plugin
+				}),
+				React.createElement(KanbanColumn, {
+					title: 'Blocked',
+					status: 'blocked',
+					tasks: tasksByStatus['blocked'],
+					plugin
+				}),
+				React.createElement(KanbanColumn, {
+					title: 'Cancelled',
+					status: 'cancelled',
+					tasks: tasksByStatus['cancelled'],
+					plugin
+				})
+			)
+		),
+		React.createElement(DragOverlay, null,
+			draggedTask && React.createElement(TaskCard, {
+				task: draggedTask,
+				plugin,
+				isDragging: true
+			})
+		)
+	);
+};
+
+interface ProjectFilterProps {
+	projects: Project[];
+	selectedProjects: string[];
+	onProjectsChange: (projects: string[]) => void;
+}
+
+const ProjectFilter: React.FC<ProjectFilterProps> = ({ projects, selectedProjects, onProjectsChange }) => {
+	const handleProjectToggle = (projectId: string) => {
+		if (selectedProjects.includes(projectId)) {
+			onProjectsChange(selectedProjects.filter(id => id !== projectId));
+		} else {
+			onProjectsChange([...selectedProjects, projectId]);
+		}
+	};
+
+	const clearFilters = () => {
+		onProjectsChange([]);
+	};
+
+	return React.createElement('div', { className: 'project-filter' },
+		React.createElement('div', { className: 'filter-controls' },
+			React.createElement('span', null, 'Filter by projects:'),
+			React.createElement('button', { 
+				onClick: clearFilters,
+				className: 'clear-filters'
+			}, 'Show All')
+		),
+		React.createElement('div', { className: 'project-checkboxes' },
+			projects.map(project =>
+				React.createElement('label', { key: project.id, className: 'project-checkbox' },
+					React.createElement('input', {
+						type: 'checkbox',
+						checked: selectedProjects.includes(project.id),
+						onChange: () => handleProjectToggle(project.id)
+					}),
+					React.createElement('span', null, project.name)
+				)
+			)
+		)
+	);
+};
+
+interface KanbanColumnProps {
+	title: string;
+	status: string;
+	tasks: Task[];
+	plugin: ProjectManagerPlugin;
+}
+
+const KanbanColumn: React.FC<KanbanColumnProps> = ({ title, status, tasks, plugin }) => {
+	const { setNodeRef, isOver } = useDroppable({
+		id: status,
+	});
+
+	const taskIds = tasks.map(task => task.id);
+
+	return React.createElement('div', { 
+		ref: setNodeRef,
+		className: `kanban-column status-${status} ${isOver ? 'column-over' : ''}` 
+	},
+		React.createElement('div', { className: 'column-header' },
+			React.createElement('h3', null, title),
+			React.createElement('span', { className: 'task-count' }, tasks.length)
+		),
+		React.createElement('div', { className: 'column-content' },
+			React.createElement(SortableContext, {
+				items: taskIds,
+				strategy: verticalListSortingStrategy,
+				children: tasks.map(task =>
+					React.createElement(DraggableTaskCard, {
+						key: task.id,
+						task,
+						plugin
+					})
+				)
+			}),
+			React.createElement('button', {
+				className: 'add-task-btn',
+				onClick: () => new CreateTaskModal(plugin.app, plugin).open()
+			}, '+ Add Task')
+		)
+	);
+};
+
+interface TaskCardProps {
+	task: Task;
+	plugin: ProjectManagerPlugin;
+	isDragging?: boolean;
+}
+
+const DraggableTaskCard: React.FC<TaskCardProps> = ({ task, plugin }) => {
+	const {
+		attributes,
+		listeners,
+		setNodeRef,
+		transform,
+		transition,
+		isDragging,
+	} = useSortable({ id: task.id });
+
+	const style = {
+		transform: CSS.Transform.toString(transform),
+		transition,
+		opacity: isDragging ? 0.5 : 1,
+	};
+
+	return React.createElement('div', {
+		ref: setNodeRef,
+		style,
+		...attributes,
+		...listeners,
+	},
+		React.createElement(TaskCard, { task, plugin, isDragging })
+	);
+};
+
+const TaskCard: React.FC<TaskCardProps> = ({ task, plugin, isDragging }) => {
+	const project = plugin.projects.find(p => p.id === task.project_id);
+
+	const handleTaskClick = () => {
+		if (!isDragging && task.markdown_file) {
+			plugin.app.workspace.openLinkText(task.markdown_file, '');
+		}
+	};
+
+	const handleDeleteTask = async (e: React.MouseEvent) => {
+		e.stopPropagation();
+		if (!isDragging && confirm(`Delete task "${task.title}"?`)) {
+			try {
+				if (plugin.supabase) {
+					const { error } = await plugin.supabase
+						.from('tasks')
+						.delete()
+						.eq('id', task.id);
+					
+					if (error) throw error;
+					new Notice('Task deleted successfully');
+					
+					if (!plugin.settings.enableRealtime) {
+						plugin.loadTasks();
+					}
+				}
+			} catch (error) {
+				console.error('Failed to delete task:', error);
+				new Notice('Failed to delete task');
+			}
+		}
+	};
+
+	return React.createElement('div', { 
+		className: `task-card ${isDragging ? 'dragging' : ''}`,
+		onClick: handleTaskClick
+	},
+		React.createElement('div', { className: 'task-header' },
+			React.createElement('span', { className: 'task-title' }, task.title),
+			React.createElement('button', {
+				className: 'delete-task-btn',
+				onClick: handleDeleteTask,
+				title: 'Delete task'
+			}, '×')
+		),
+		task.description && React.createElement('p', { className: 'task-description' }, task.description),
+		React.createElement('div', { className: 'task-meta' },
+			React.createElement('span', { className: `priority-badge priority-${task.priority}` }, task.priority),
+			project && React.createElement('span', { className: 'project-badge' }, project.name),
+			task.due_date && React.createElement('span', { className: 'due-date' }, 
+				new Date(task.due_date).toLocaleDateString()
+			)
+		)
+	);
+};

@@ -164,3 +164,250 @@
 .connection-controls button:hover {
     background: var(--background-modifier-hover);
 }
+
+/* Kanban Board Styles */
+.kanban-board {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    background: var(--background-primary);
+}
+
+.kanban-header {
+    margin-bottom: 20px;
+}
+
+.kanban-header h2 {
+    margin: 0 0 16px 0;
+    color: var(--text-normal);
+}
+
+.project-filter {
+    background: var(--background-secondary);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.filter-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.clear-filters {
+    padding: 4px 8px;
+    font-size: 0.8em;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.clear-filters:hover {
+    background: var(--interactive-accent-hover);
+}
+
+.project-checkboxes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.project-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.project-checkbox input {
+    margin: 0;
+}
+
+.kanban-columns {
+    display: flex;
+    gap: 16px;
+    flex: 1;
+    overflow-x: auto;
+    min-height: 0;
+}
+
+.kanban-column {
+    flex: 1;
+    min-width: 280px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+    display: flex;
+    flex-direction: column;
+}
+
+.column-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-modifier-hover);
+    border-radius: 8px 8px 0 0;
+}
+
+.column-header h3 {
+    margin: 0;
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.task-count {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 500;
+}
+
+.column-content {
+    flex: 1;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+}
+
+.task-card {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.task-card:hover {
+    border-color: var(--interactive-accent);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.task-title {
+    font-weight: 500;
+    color: var(--text-normal);
+    flex: 1;
+    margin-right: 8px;
+}
+
+.delete-task-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+}
+
+.delete-task-btn:hover {
+    background: var(--background-modifier-error);
+    color: var(--text-error);
+}
+
+.task-description {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin: 0 0 8px 0;
+    line-height: 1.4;
+}
+
+.task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.priority-badge, .project-badge, .due-date {
+    font-size: 0.75em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.project-badge {
+    background: var(--color-blue);
+    color: white;
+}
+
+.due-date {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.add-task-btn {
+    width: 100%;
+    padding: 8px;
+    background: var(--background-modifier-hover);
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+}
+
+.add-task-btn:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+/* Drag and Drop Styles */
+.task-card.dragging {
+    opacity: 0.5;
+    transform: rotate(5deg);
+}
+
+.column-over {
+    background: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+}
+
+.column-over .column-header {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.task-card {
+    user-select: none;
+    touch-action: none;
+}
+
+.task-card:hover {
+    cursor: grab;
+}
+
+.task-card:active {
+    cursor: grabbing;
+}
