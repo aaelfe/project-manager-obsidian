@@ -103,10 +103,14 @@ export class KanbanView extends ItemView {
 
 	updateBoard() {
 		if (this.root) {
+			// Force React re-render by creating new object references
+			const projects = [...this.plugin.projects];
+			const tasks = [...this.plugin.tasks];
+			
 			this.root.render(React.createElement(KanbanBoard, { 
 				plugin: this.plugin,
-				projects: this.plugin.projects,
-				tasks: this.plugin.tasks,
+				projects: projects,
+				tasks: tasks,
 				selectedProjectId: this.selectedProjectId,
 				onProjectChange: (projectId: string | null) => this.setSelectedProject(projectId)
 			}));
@@ -586,6 +590,149 @@ class CreateTaskModal extends Modal {
 	}
 }
 
+class TaskDetailModal extends Modal {
+	constructor(app: App, private plugin: ProjectManagerPlugin, private task: Task) {
+		super(app);
+	}
+
+	onOpen() {
+		const {contentEl} = this;
+		contentEl.empty();
+		contentEl.createEl('h2', {text: `Edit Task: ${this.task.title}`});
+
+		const form = contentEl.createDiv('task-detail-form');
+		
+		const titleInput = form.createEl('input', {type: 'text', placeholder: 'Task title', value: this.task.title});
+		titleInput.addClass('task-input');
+		
+		const descInput = form.createEl('textarea', {placeholder: 'Task description'});
+		descInput.addClass('task-textarea');
+		descInput.value = this.task.description || '';
+		
+		const prioritySelect = form.createEl('select');
+		prioritySelect.addClass('task-select');
+		['low', 'medium', 'high', 'urgent'].forEach(priority => {
+			const option = prioritySelect.createEl('option', {value: priority, text: priority});
+			if (priority === this.task.priority) option.selected = true;
+		});
+		
+		const statusSelect = form.createEl('select');
+		statusSelect.addClass('task-select');
+		['todo', 'in-progress', 'done', 'blocked', 'cancelled'].forEach(status => {
+			const option = statusSelect.createEl('option', {value: status, text: status});
+			if (status === this.task.status) option.selected = true;
+		});
+		
+		const projectSelect = form.createEl('select');
+		projectSelect.addClass('task-select');
+		projectSelect.createEl('option', {value: '', text: 'No project'});
+		this.plugin.projects.forEach(project => {
+			const option = projectSelect.createEl('option', {value: project.id, text: project.name});
+			if (this.task.project_id === project.id) option.selected = true;
+		});
+		
+		const dueDateInput = form.createEl('input', {type: 'datetime-local'});
+		dueDateInput.addClass('task-input');
+		if (this.task.due_date) {
+			const date = new Date(this.task.due_date);
+			dueDateInput.value = date.toISOString().slice(0, 16);
+		}
+		
+		const markdownFileInput = form.createEl('input', {type: 'text', placeholder: 'Markdown file path'});
+		markdownFileInput.addClass('task-input');
+		markdownFileInput.value = this.task.markdown_file || '';
+		
+		const githubRepoInput = form.createEl('input', {type: 'text', placeholder: 'GitHub repo (owner/repo)'});
+		githubRepoInput.addClass('task-input');
+		githubRepoInput.value = this.task.github_repo || '';
+		
+		const metaDiv = form.createDiv('task-meta-info');
+		metaDiv.createEl('p', {text: `Created: ${new Date(this.task.created_at).toLocaleString()}`});
+		metaDiv.createEl('p', {text: `Updated: ${new Date(this.task.updated_at).toLocaleString()}`});
+		
+		const buttonDiv = form.createDiv('button-group');
+		const saveBtn = buttonDiv.createEl('button', {text: 'Save Changes'});
+		const deleteBtn = buttonDiv.createEl('button', {text: 'Delete Task', cls: 'mod-warning'});
+		const cancelBtn = buttonDiv.createEl('button', {text: 'Cancel'});
+
+		saveBtn.onclick = async () => {
+			await this.updateTask({
+				title: titleInput.value.trim(),
+				description: descInput.value.trim() || undefined,
+				priority: prioritySelect.value as 'low' | 'medium' | 'high' | 'urgent',
+				status: statusSelect.value as 'todo' | 'in-progress' | 'done' | 'blocked' | 'cancelled',
+				project_id: projectSelect.value || undefined,
+				due_date: dueDateInput.value ? new Date(dueDateInput.value).toISOString() : undefined,
+				markdown_file: markdownFileInput.value.trim() || undefined,
+				github_repo: githubRepoInput.value.trim() || undefined
+			});
+			this.close();
+		};
+
+		deleteBtn.onclick = async () => {
+			if (confirm(`Delete task "${this.task.title}"?`)) {
+				await this.deleteTask();
+				this.close();
+			}
+		};
+
+		cancelBtn.onclick = () => this.close();
+	}
+
+	async updateTask(updates: Partial<Task>) {
+		if (!this.plugin.supabase) {
+			new Notice('Not connected to Supabase');
+			return;
+		}
+		
+		try {
+			const { error } = await this.plugin.supabase
+				.from('tasks')
+				.update(updates)
+				.eq('id', this.task.id);
+			
+			if (error) throw error;
+			new Notice('Task updated successfully');
+			
+			if (!this.plugin.settings.enableRealtime) {
+				this.plugin.loadTasks();
+			}
+		} catch (error) {
+			console.error('Failed to update task:', error);
+			new Notice('Failed to update task');
+		}
+	}
+
+	async deleteTask() {
+		if (!this.plugin.supabase) {
+			new Notice('Not connected to Supabase');
+			return;
+		}
+		
+		try {
+			const { error } = await this.plugin.supabase
+				.from('tasks')
+				.delete()
+				.eq('id', this.task.id);
+			
+			if (error) throw error;
+			new Notice('Task deleted successfully');
+			
+			if (!this.plugin.settings.enableRealtime) {
+				this.plugin.loadTasks();
+			}
+		} catch (error) {
+			console.error('Failed to delete task:', error);
+			new Notice('Failed to delete task');
+		}
+	}
+
+	onClose() {
+		const {contentEl} = this;
+		contentEl.empty();
+	}
+}
+
 class LinkNoteModal extends Modal {
 	constructor(app: App, private plugin: ProjectManagerPlugin, private file: TFile) {
 		super(app);
@@ -757,6 +904,8 @@ interface KanbanBoardProps {
 const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, selectedProjectId, onProjectChange }) => {
 	const [filteredTasks, setFilteredTasks] = React.useState<Task[]>(tasks);
 	const [activeId, setActiveId] = React.useState<string | null>(null);
+	const [currentTasks, setCurrentTasks] = React.useState<Task[]>(tasks);
+	const [currentProjects, setCurrentProjects] = React.useState<Project[]>(projects);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -766,15 +915,24 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, sele
 		})
 	);
 
+	// Update local state when plugin data changes
+	React.useEffect(() => {
+		setCurrentTasks(tasks);
+	}, [tasks]);
+
+	React.useEffect(() => {
+		setCurrentProjects(projects);
+	}, [projects]);
+
 	React.useEffect(() => {
 		if (selectedProjectId === null) {
 			// Show all tasks when no specific project is selected
-			setFilteredTasks(tasks);
+			setFilteredTasks(currentTasks);
 		} else {
 			// Show only tasks for the selected project
-			setFilteredTasks(tasks.filter(task => task.project_id === selectedProjectId));
+			setFilteredTasks(currentTasks.filter(task => task.project_id === selectedProjectId));
 		}
-	}, [tasks, selectedProjectId]);
+	}, [currentTasks, selectedProjectId]);
 
 	const tasksByStatus = {
 		'todo': filteredTasks.filter(task => task.status === 'todo'),
@@ -834,7 +992,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ plugin, projects, tasks, sele
 			React.createElement('div', { className: 'kanban-header' },
 				React.createElement('h2', null, 'Project Kanban'),
 				React.createElement(ProjectSelector, {
-					projects,
+					projects: currentProjects,
 					selectedProjectId,
 					onProjectChange
 				})
@@ -1048,7 +1206,15 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, plugin, isDragging }) => {
 	const project = plugin.projects.find(p => p.id === task.project_id);
 
 	const handleTaskClick = () => {
-		if (!isDragging && task.markdown_file) {
+		if (!isDragging) {
+			// Open task detail modal for editing
+			new TaskDetailModal(plugin.app, plugin, task).open();
+		}
+	};
+
+	const handleLinkClick = (e: React.MouseEvent, link: string) => {
+		e.stopPropagation();
+		if (task.markdown_file) {
 			plugin.app.workspace.openLinkText(task.markdown_file, '');
 		}
 	};
@@ -1077,24 +1243,67 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, plugin, isDragging }) => {
 		}
 	};
 
+	const formatDate = (dateString: string) => {
+		const date = new Date(dateString);
+		return date.toLocaleDateString();
+	};
+
+	const getDueDateStatus = () => {
+		if (!task.due_date) return '';
+		const dueDate = new Date(task.due_date);
+		const today = new Date();
+		const diffTime = dueDate.getTime() - today.getTime();
+		const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+		
+		if (diffDays < 0) return 'overdue';
+		if (diffDays === 0) return 'due-today';
+		if (diffDays <= 3) return 'due-soon';
+		return 'due-later';
+	};
+
 	return React.createElement('div', { 
-		className: `task-card ${isDragging ? 'dragging' : ''}`,
+		className: `task-card ${isDragging ? 'dragging' : ''} priority-${task.priority}`,
 		onClick: handleTaskClick
 	},
 		React.createElement('div', { className: 'task-header' },
-			React.createElement('span', { className: 'task-title' }, task.title),
+			React.createElement('div', { className: 'task-title-section' },
+				React.createElement('span', { className: 'task-title' }, task.title),
+				React.createElement('span', { className: `priority-indicator priority-${task.priority}` }, 
+					task.priority.charAt(0).toUpperCase()
+				)
+			),
 			React.createElement('button', {
 				className: 'delete-task-btn',
 				onClick: handleDeleteTask,
 				title: 'Delete task'
 			}, '×')
 		),
-		task.description && React.createElement('p', { className: 'task-description' }, task.description),
+		task.description && React.createElement('p', { className: 'task-description' }, 
+			task.description.length > 100 ? task.description.substring(0, 100) + '...' : task.description
+		),
 		React.createElement('div', { className: 'task-meta' },
-			React.createElement('span', { className: `priority-badge priority-${task.priority}` }, task.priority),
 			project && React.createElement('span', { className: 'project-badge' }, project.name),
-			task.due_date && React.createElement('span', { className: 'due-date' }, 
-				new Date(task.due_date).toLocaleDateString()
+			task.due_date && React.createElement('span', { 
+				className: `due-date ${getDueDateStatus()}` 
+			}, formatDate(task.due_date))
+		),
+		React.createElement('div', { className: 'task-footer' },
+			React.createElement('div', { className: 'task-links' },
+				task.markdown_file && React.createElement('button', {
+					className: 'link-btn markdown-link',
+					onClick: (e: React.MouseEvent) => handleLinkClick(e, task.markdown_file!),
+					title: 'Open linked note'
+				}, '📝'),
+				task.github_repo && React.createElement('a', {
+					className: 'link-btn github-link',
+					href: `https://github.com/${task.github_repo}`,
+					onClick: (e: React.MouseEvent) => e.stopPropagation(),
+					title: 'Open GitHub repo',
+					target: '_blank'
+				}, '🔗')
+			),
+			React.createElement('span', { className: 'created-date' }, 
+				formatDate(task.created_at)
 			)
 		)
 	);

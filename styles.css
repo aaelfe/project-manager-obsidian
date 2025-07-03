@@ -487,3 +487,175 @@
     color: var(--text-muted);
     margin: 4px 0 0 0;
 }
+
+/* Enhanced Task Card Styles */
+.task-card.priority-low {
+    border-left: 4px solid var(--color-base-30);
+}
+
+.task-card.priority-medium {
+    border-left: 4px solid var(--color-yellow);
+}
+
+.task-card.priority-high {
+    border-left: 4px solid var(--color-orange);
+}
+
+.task-card.priority-urgent {
+    border-left: 4px solid var(--color-red);
+}
+
+.task-title-section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    margin-right: 8px;
+}
+
+.priority-indicator {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7em;
+    font-weight: bold;
+    color: white;
+    margin-left: 8px;
+}
+
+.priority-indicator.priority-low {
+    background: var(--color-base-30);
+}
+
+.priority-indicator.priority-medium {
+    background: var(--color-yellow);
+    color: var(--color-base-00);
+}
+
+.priority-indicator.priority-high {
+    background: var(--color-orange);
+}
+
+.priority-indicator.priority-urgent {
+    background: var(--color-red);
+}
+
+.task-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.task-links {
+    display: flex;
+    gap: 4px;
+}
+
+.link-btn {
+    padding: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1;
+    transition: background 0.2s ease;
+}
+
+.link-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.markdown-link {
+    color: var(--color-blue);
+}
+
+.github-link {
+    color: var(--text-muted);
+    text-decoration: none;
+}
+
+.created-date {
+    font-size: 0.7em;
+    color: var(--text-faint);
+}
+
+.due-date.overdue {
+    background: var(--color-red);
+    color: white;
+}
+
+.due-date.due-today {
+    background: var(--color-orange);
+    color: white;
+}
+
+.due-date.due-soon {
+    background: var(--color-yellow);
+    color: var(--color-base-00);
+}
+
+.due-date.due-later {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+/* Task Detail Modal Styles */
+.task-detail-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 0;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.task-input, .task-textarea, .task-select {
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.task-textarea {
+    min-height: 100px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.task-select {
+    cursor: pointer;
+}
+
+.task-meta-info {
+    background: var(--background-secondary);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.task-meta-info p {
+    margin: 4px 0;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.button-group .mod-warning {
+    background: var(--color-red);
+    color: white;
+    border-color: var(--color-red);
+}
+
+.button-group .mod-warning:hover {
+    background: var(--color-red);
+    opacity: 0.8;
+}
